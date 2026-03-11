@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +16,9 @@ import (
 	"github.com/kborup-redhat/placement-discovery-plugin/pkg/models"
 	"github.com/kborup-redhat/placement-discovery-plugin/pkg/placement"
 )
+
+// dns1123Regex validates Kubernetes resource names (RFC 1123 DNS labels)
+var dns1123Regex = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-\.]{0,251}[a-z0-9])?$`)
 
 // PlacementHandler handles placement API requests
 type PlacementHandler struct {
@@ -52,6 +56,21 @@ func (h *PlacementHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	namespace := parts[1]
 	name := parts[2]
 
+	// Validate resource type against whitelist
+	switch resourceType {
+	case "pod", "deployment", "vm":
+		// valid
+	default:
+		http.Error(w, "Unsupported resource type", http.StatusBadRequest)
+		return
+	}
+
+	// Validate namespace and name are valid Kubernetes names
+	if !dns1123Regex.MatchString(namespace) || !dns1123Regex.MatchString(name) {
+		http.Error(w, "Invalid namespace or resource name", http.StatusBadRequest)
+		return
+	}
+
 	ctx := r.Context()
 
 	var response *models.PlacementResponse
@@ -64,14 +83,11 @@ func (h *PlacementHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		response, err = h.handleDeploymentPlacement(ctx, namespace, name)
 	case "vm":
 		response, err = h.handleVMPlacement(ctx, namespace, name)
-	default:
-		http.Error(w, fmt.Sprintf("Unsupported resource type: %s", resourceType), http.StatusBadRequest)
-		return
 	}
 
 	if err != nil {
 		klog.Errorf("Failed to calculate placement for %s/%s/%s: %v", resourceType, namespace, name, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 

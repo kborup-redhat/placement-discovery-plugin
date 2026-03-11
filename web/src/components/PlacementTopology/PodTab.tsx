@@ -1,9 +1,19 @@
 import * as React from 'react';
 import { PlacementTopology } from './PlacementTopology';
 
-const PodPlacementTab: any = (props: any) => {
-  // Console's loadComponent calls this as a loader (no args) during SPA navigation,
-  // expecting a Promise. Return a Promise resolving to the component itself.
+interface TabProps {
+  obj?: {
+    metadata?: {
+      namespace?: string;
+      name?: string;
+    };
+  };
+}
+
+// Console's loadComponent calls this as a loader (no args) during SPA navigation,
+// expecting a Promise. The `any` return type accommodates both the Promise (loader)
+// and ReactElement (normal render) return paths.
+const PodPlacementTab = (props: TabProps | undefined | null): React.ReactElement | null | Promise<unknown> => {
   if (props === undefined || props === null) {
     return Promise.resolve(PodPlacementTab);
   }

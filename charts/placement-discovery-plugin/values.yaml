@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: quay.io/kborup/placement-discovery-plugin
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
   tag: "0.2.0"
 
 imagePullSecrets: []
@@ -23,10 +23,12 @@ podSecurityContext:
 
 securityContext:
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop:
     - ALL
   runAsNonRoot: true
+  runAsUser: 1001
 
 service:
   type: ClusterIP

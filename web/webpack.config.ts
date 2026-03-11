@@ -102,7 +102,7 @@ const config: Configuration = {
       ],
     }),
   ],
-  devtool: 'source-map',
+  devtool: process.env.NODE_ENV === 'development' ? 'source-map' : false,
   performance: {
     hints: false,
   },

@@ -36,6 +36,7 @@ func (c *Calculator) CalculatePodPlacement(ctx context.Context, pod *corev1.Pod)
 	// Get all pods to calculate resource usage per node
 	allPods, err := c.k8sClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{
 		FieldSelector: "status.phase!=Failed,status.phase!=Succeeded",
+		Limit:         10000,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pods: %w", err)

@@ -119,7 +119,7 @@ export function usePlacementData(
 
       try {
         const response = await fetch(
-          `/api/plugins/placement-discovery-plugin/api/placement/${resourceType}/${namespace}/${name}`,
+          `/api/plugins/placement-discovery-plugin/api/placement/${encodeURIComponent(resourceType)}/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`,
         );
 
         if (!response.ok) {

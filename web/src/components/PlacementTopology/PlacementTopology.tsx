@@ -66,7 +66,7 @@ export const PlacementTopology: React.FC<PlacementTopologyProps> = ({
         <Title size="lg" headingLevel="h3">
           Error loading placement data
         </Title>
-        <EmptyStateBody>{error.message}</EmptyStateBody>
+        <EmptyStateBody>Failed to load placement data. Please try again later.</EmptyStateBody>
         <Button variant="primary" onClick={refetch}>
           Retry
         </Button>

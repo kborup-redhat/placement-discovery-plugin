@@ -17,6 +17,8 @@ spec:
       {{- end }}
       labels:
         {{- include "placement-discovery-plugin.selectorLabels" . | nindent 8 }}
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/audit: restricted
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -47,6 +49,8 @@ spec:
             scheme: HTTPS
           initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /ready
@@ -54,6 +58,8 @@ spec:
             scheme: HTTPS
           initialDelaySeconds: 5
           periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
         resources:
           {{- toYaml .Values.resources | nindent 12 }}
         volumeMounts:
@@ -64,7 +70,7 @@ spec:
       - name: serving-cert
         secret:
           secretName: {{ include "placement-discovery-plugin.fullname" . }}-cert
-          defaultMode: 420
+          defaultMode: 0400
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

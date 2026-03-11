@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -52,11 +54,17 @@ func main() {
 	// Set up HTTP routes
 	mux := http.NewServeMux()
 
+	// Validate and resolve static path
+	absStaticPath, err := filepath.Abs(staticPath)
+	if err != nil {
+		klog.Fatalf("Invalid static path: %v", err)
+	}
+
 	// Plugin manifest (required for OpenShift console plugin)
 	// Serve at both root and /plugin-manifest.json for compatibility
 	manifestHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		http.ServeFile(w, r, staticPath+"/plugin-manifest.json")
+		http.ServeFile(w, r, filepath.Join(absStaticPath, "plugin-manifest.json"))
 	}
 	mux.HandleFunc("/plugin-manifest.json", manifestHandler)
 
@@ -69,8 +77,8 @@ func main() {
 
 	// Serve static files and manifest at root
 	// Check if static path exists
-	if _, err := os.Stat(staticPath); os.IsNotExist(err) {
-		klog.Warningf("Static path %s does not exist, static files will not be served", staticPath)
+	if _, err := os.Stat(absStaticPath); os.IsNotExist(err) {
+		klog.Warningf("Static path does not exist, static files will not be served")
 	} else {
 		// Custom handler for root that serves manifest or static files
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -80,16 +88,17 @@ func main() {
 				return
 			}
 			// Serve other static files
-			http.FileServer(http.Dir(staticPath)).ServeHTTP(w, r)
+			http.FileServer(http.Dir(absStaticPath)).ServeHTTP(w, r)
 		})
-		klog.Infof("Serving static files from %s", staticPath)
-		klog.Infof("Plugin manifest available at / and /plugin-manifest.json")
+		klog.Info("Serving static files")
+		klog.Info("Plugin manifest available at / and /plugin-manifest.json")
 	}
 
-	// Create server
+	// Create server with middleware chain
+	handler := securityHeadersMiddleware(rateLimitMiddleware(loggingMiddleware(corsMiddleware(mux))))
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      loggingMiddleware(corsMiddleware(mux)),
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -100,10 +109,10 @@ func main() {
 		klog.Infof("Server listening on :%d", port)
 		var err error
 		if certFile != "" && keyFile != "" {
-			klog.Infof("Starting HTTPS server with cert: %s, key: %s", certFile, keyFile)
+			klog.Info("Starting HTTPS server")
 			err = server.ListenAndServeTLS(certFile, keyFile)
 		} else {
-			klog.Infof("Starting HTTP server (no TLS)")
+			klog.Info("Starting HTTP server (no TLS)")
 			err = server.ListenAndServe()
 		}
 		if err != nil && err != http.ErrServerClosed {
@@ -161,16 +170,19 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// corsMiddleware adds CORS headers for development
+// corsMiddleware adds CORS headers
+// In OpenShift, the console proxies plugin requests via the same origin,
+// so CORS is only needed for local development.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow OpenShift Console to make requests to this plugin
 		origin := r.Header.Get("Origin")
 		if origin != "" {
+			// Only allow same-origin requests in production.
+			// The OpenShift console proxies plugin API calls, so cross-origin
+			// requests should not occur. Allow GET only.
 			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 
 		// Handle preflight requests
@@ -178,6 +190,87 @@ func corsMiddleware(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// securityHeadersMiddleware sets standard HTTP security headers
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// rateLimitMiddleware implements a simple token bucket rate limiter per-client IP.
+// Allows a burst of 50 requests and refills at 10 requests/second.
+func rateLimitMiddleware(next http.Handler) http.Handler {
+	type client struct {
+		tokens    float64
+		lastSeen  time.Time
+	}
+
+	var (
+		mu      sync.Mutex
+		clients = make(map[string]*client)
+	)
+
+	const (
+		rate     = 10.0 // tokens per second
+		burst    = 50.0 // max tokens
+		cleanupInterval = 5 * time.Minute
+	)
+
+	// Background cleanup of stale entries
+	go func() {
+		for {
+			time.Sleep(cleanupInterval)
+			mu.Lock()
+			for ip, c := range clients {
+				if time.Since(c.lastSeen) > cleanupInterval {
+					delete(clients, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip rate limiting for health/ready probes
+		if r.URL.Path == "/health" || r.URL.Path == "/ready" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		ip := r.RemoteAddr
+
+		mu.Lock()
+		c, exists := clients[ip]
+		now := time.Now()
+		if !exists {
+			c = &client{tokens: burst, lastSeen: now}
+			clients[ip] = c
+		}
+
+		// Refill tokens based on elapsed time
+		elapsed := now.Sub(c.lastSeen).Seconds()
+		c.tokens += elapsed * rate
+		if c.tokens > burst {
+			c.tokens = burst
+		}
+		c.lastSeen = now
+
+		if c.tokens < 1 {
+			mu.Unlock()
+			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		c.tokens--
+		mu.Unlock()
 
 		next.ServeHTTP(w, r)
 	})
