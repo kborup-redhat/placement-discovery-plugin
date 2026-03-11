@@ -28,7 +28,6 @@ securityContext:
     drop:
     - ALL
   runAsNonRoot: true
-  runAsUser: 1001
 
 service:
   type: ClusterIP
