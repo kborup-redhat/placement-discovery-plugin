@@ -81,24 +81,60 @@ func (c *VMCalculator) vmToPod(vm *kubevirtv1.VirtualMachine) *corev1.Pod {
 		},
 	}
 
-	// Convert VM resource requirements to container resource requirements
-	if vm.Spec.Template.Spec.Domain.Resources.Requests != nil || vm.Spec.Template.Spec.Domain.Resources.Limits != nil {
-		container := corev1.Container{
-			Name:  "compute",
-			Image: "virt-launcher", // Placeholder
-			Resources: corev1.ResourceRequirements{
-				Requests: c.convertVMResources(vm.Spec.Template.Spec.Domain.Resources.Requests),
-				Limits:   c.convertVMResources(vm.Spec.Template.Spec.Domain.Resources.Limits),
-			},
-		}
-		pod.Spec.Containers = append(pod.Spec.Containers, container)
-	} else {
-		// If no explicit resources, add default container
-		pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{
-			Name:  "compute",
-			Image: "virt-launcher",
-		})
+	// Build resource requirements from VM spec
+	// KubeVirt VMs can specify resources in multiple ways:
+	// 1. domain.resources.requests/limits (explicit resource requests)
+	// 2. domain.memory.guest (guest memory size)
+	// 3. domain.cpu.cores/sockets/threads (CPU topology)
+	requests := corev1.ResourceList{}
+	limits := corev1.ResourceList{}
+
+	domain := vm.Spec.Template.Spec.Domain
+
+	// Start with explicit resource requests/limits if present
+	if domain.Resources.Requests != nil {
+		requests = c.convertVMResources(domain.Resources.Requests)
 	}
+	if domain.Resources.Limits != nil {
+		limits = c.convertVMResources(domain.Resources.Limits)
+	}
+
+	// If memory.guest is set and no explicit memory request, use guest memory
+	if domain.Memory != nil && domain.Memory.Guest != nil {
+		if _, hasMemReq := requests[corev1.ResourceMemory]; !hasMemReq {
+			requests[corev1.ResourceMemory] = *domain.Memory.Guest
+		}
+	}
+
+	// If CPU topology is set and no explicit CPU request, derive from topology
+	if domain.CPU != nil && (domain.CPU.Cores > 0 || domain.CPU.Sockets > 0) {
+		if _, hasCPUReq := requests[corev1.ResourceCPU]; !hasCPUReq {
+			cores := uint32(1)
+			sockets := uint32(1)
+			threads := uint32(1)
+			if domain.CPU.Cores > 0 {
+				cores = domain.CPU.Cores
+			}
+			if domain.CPU.Sockets > 0 {
+				sockets = domain.CPU.Sockets
+			}
+			if domain.CPU.Threads > 0 {
+				threads = domain.CPU.Threads
+			}
+			totalCPUs := cores * sockets * threads
+			requests[corev1.ResourceCPU] = *resource.NewQuantity(int64(totalCPUs), resource.DecimalSI)
+		}
+	}
+
+	container := corev1.Container{
+		Name:  "compute",
+		Image: "virt-launcher",
+		Resources: corev1.ResourceRequirements{
+			Requests: requests,
+			Limits:   limits,
+		},
+	}
+	pod.Spec.Containers = append(pod.Spec.Containers, container)
 
 	// Add resource overhead for virt-launcher sidecar
 	// KubeVirt adds overhead for the launcher container
@@ -178,27 +214,54 @@ func (c *VMCalculator) extractVMSpecInfo(vm *kubevirtv1.VirtualMachine) *models.
 		}
 	}
 
-	// Extract resource requests/limits
-	resources := vm.Spec.Template.Spec.Domain.Resources
-	if resources.Requests != nil || resources.Limits != nil {
-		info.Resources = models.PodResources{}
-		if resources.Requests != nil {
-			info.Resources.Requests = models.ResourceList{}
-			if cpu, exists := resources.Requests[corev1.ResourceCPU]; exists {
-				info.Resources.Requests.CPU = cpu.String()
-			}
-			if memory, exists := resources.Requests[corev1.ResourceMemory]; exists {
-				info.Resources.Requests.Memory = memory.String()
-			}
+	// Extract resource requests/limits, including domain.memory.guest and domain.cpu
+	domain := vm.Spec.Template.Spec.Domain
+	info.Resources = models.PodResources{
+		Requests: models.ResourceList{},
+	}
+
+	// Explicit resource requests
+	if domain.Resources.Requests != nil {
+		if cpu, exists := domain.Resources.Requests[corev1.ResourceCPU]; exists {
+			info.Resources.Requests.CPU = cpu.String()
 		}
-		if resources.Limits != nil {
-			info.Resources.Limits = models.ResourceList{}
-			if cpu, exists := resources.Limits[corev1.ResourceCPU]; exists {
-				info.Resources.Limits.CPU = cpu.String()
-			}
-			if memory, exists := resources.Limits[corev1.ResourceMemory]; exists {
-				info.Resources.Limits.Memory = memory.String()
-			}
+		if memory, exists := domain.Resources.Requests[corev1.ResourceMemory]; exists {
+			info.Resources.Requests.Memory = memory.String()
+		}
+	}
+
+	// Fall back to domain.memory.guest if no explicit memory request
+	if info.Resources.Requests.Memory == "" && domain.Memory != nil && domain.Memory.Guest != nil {
+		info.Resources.Requests.Memory = domain.Memory.Guest.String()
+	}
+
+	// Fall back to CPU topology if no explicit CPU request
+	if info.Resources.Requests.CPU == "" && domain.CPU != nil && (domain.CPU.Cores > 0 || domain.CPU.Sockets > 0) {
+		cores := uint32(1)
+		sockets := uint32(1)
+		threads := uint32(1)
+		if domain.CPU.Cores > 0 {
+			cores = domain.CPU.Cores
+		}
+		if domain.CPU.Sockets > 0 {
+			sockets = domain.CPU.Sockets
+		}
+		if domain.CPU.Threads > 0 {
+			threads = domain.CPU.Threads
+		}
+		totalCPUs := cores * sockets * threads
+		q := resource.NewQuantity(int64(totalCPUs), resource.DecimalSI)
+		info.Resources.Requests.CPU = q.String()
+	}
+
+	// Explicit resource limits
+	if domain.Resources.Limits != nil {
+		info.Resources.Limits = models.ResourceList{}
+		if cpu, exists := domain.Resources.Limits[corev1.ResourceCPU]; exists {
+			info.Resources.Limits.CPU = cpu.String()
+		}
+		if memory, exists := domain.Resources.Limits[corev1.ResourceMemory]; exists {
+			info.Resources.Limits.Memory = memory.String()
 		}
 	}
 

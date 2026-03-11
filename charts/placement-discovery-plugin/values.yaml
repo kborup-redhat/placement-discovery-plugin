@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: quay.io/kborup/placement-discovery-plugin
   pullPolicy: IfNotPresent
-  tag: "0.2.0"
+  tag: "0.3.0"
 
 imagePullSecrets: []
 nameOverride: ""

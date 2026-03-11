@@ -2,8 +2,8 @@ apiVersion: v2
 name: placement-discovery-plugin
 description: OpenShift Console Plugin for Pod/VM Placement Topology Visualization
 type: application
-version: 0.2.0
-appVersion: "0.2.0"
+version: 0.3.0
+appVersion: "0.3.0"
 keywords:
   - openshift
   - console

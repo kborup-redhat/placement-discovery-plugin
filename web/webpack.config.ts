@@ -35,7 +35,7 @@ const config: Configuration = {
     new ConsoleRemotePlugin({
       pluginMetadata: {
         name: 'placement-discovery-plugin',
-        version: '0.2.0',
+        version: '0.3.0',
         displayName: 'Placement Topology',
         description: 'Visualize pod and VM placement across cluster nodes',
         exposedModules: {

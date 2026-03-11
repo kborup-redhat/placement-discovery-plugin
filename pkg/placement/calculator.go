@@ -153,7 +153,7 @@ func (c *Calculator) evaluateNode(pod *corev1.Pod, node *corev1.Node, resources 
 			reasons = append(reasons, fmt.Sprintf("Insufficient CPU: requires %s, available %s", cpuReq.String(), availCPU.String()))
 		}
 		if memReq.Cmp(availMem) > 0 {
-			reasons = append(reasons, fmt.Sprintf("Insufficient memory: requires %s, available %s", memReq.String(), availMem.String()))
+			reasons = append(reasons, fmt.Sprintf("Insufficient memory: requires %s, available %s", formatMemory(memReq), formatMemory(availMem)))
 		}
 	}
 
@@ -640,4 +640,21 @@ func (c *Calculator) getQoSClass(spec *corev1.PodSpec) string {
 	}
 
 	return "BestEffort"
+}
+
+// formatMemory formats a memory resource.Quantity into a human-friendly string using Gi/Mi
+func formatMemory(q resource.Quantity) string {
+	bytes := q.Value()
+	gi := float64(bytes) / (1024 * 1024 * 1024)
+	if gi >= 1 {
+		if gi == float64(int64(gi)) {
+			return fmt.Sprintf("%dGi", int64(gi))
+		}
+		return fmt.Sprintf("%.1fGi", gi)
+	}
+	mi := float64(bytes) / (1024 * 1024)
+	if mi >= 1 {
+		return fmt.Sprintf("%.0fMi", mi)
+	}
+	return q.String()
 }

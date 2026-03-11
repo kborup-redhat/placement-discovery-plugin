@@ -3,7 +3,7 @@
 # Variables
 REGISTRY ?= quay.io
 REPOSITORY ?= kborup/placement-discovery-plugin
-TAG ?= 0.2.0
+TAG ?= 0.3.0
 IMAGE ?= $(REGISTRY)/$(REPOSITORY):$(TAG)
 
 PLUGIN_NAME ?= placement-discovery-plugin
