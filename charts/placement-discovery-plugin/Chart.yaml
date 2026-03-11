@@ -1,0 +1,17 @@
+apiVersion: v2
+name: placement-discovery-plugin
+description: OpenShift Console Plugin for Pod/VM Placement Topology Visualization
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+keywords:
+  - openshift
+  - console
+  - plugin
+  - placement
+  - topology
+home: https://github.com/kborup-redhat/placement-discovery-plugin
+sources:
+  - https://github.com/kborup-redhat/placement-discovery-plugin
+maintainers:
+  - name: kborup

@@ -1,0 +1,59 @@
+replicaCount: 1
+
+image:
+  repository: quay.io/kborup/placement-discovery-plugin
+  pullPolicy: Always
+  tag: "0.2.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  runAsNonRoot: true
+
+service:
+  type: ClusterIP
+  port: 9002
+  targetPort: 9002
+  annotations: {}
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+plugin:
+  name: placement-discovery-plugin
+  displayName: "Placement Topology"
+  description: "Visualize pod and VM placement across cluster nodes"
+  consoleExtensions:
+    enabled: true
+  serviceName: placement-discovery-plugin-plugin
+  servicePort: 9002
+  basePath: "/"

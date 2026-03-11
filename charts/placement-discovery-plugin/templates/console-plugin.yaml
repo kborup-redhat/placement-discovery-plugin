@@ -1,0 +1,17 @@
+{{- if .Values.plugin.consoleExtensions.enabled }}
+apiVersion: console.openshift.io/v1
+kind: ConsolePlugin
+metadata:
+  name: {{ .Values.plugin.name }}
+  labels:
+    {{- include "placement-discovery-plugin.labels" . | nindent 4 }}
+spec:
+  displayName: {{ .Values.plugin.displayName | quote }}
+  backend:
+    type: Service
+    service:
+      name: {{ include "placement-discovery-plugin.fullname" . }}
+      namespace: {{ .Release.Namespace }}
+      port: {{ .Values.plugin.servicePort }}
+      basePath: {{ .Values.plugin.basePath | quote }}
+{{- end }}

@@ -1,0 +1,42 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+/plugin
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Frontend build output
+web/dist/
+web/build/
+
+# OS
+.DS_Store
+
+# Helm
+charts/**/*.tgz
+
+# Container images
+*.tar
+
+# Claude AI configuration
+claude.md
+.claude/
